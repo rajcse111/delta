@@ -1,0 +1,6 @@
+sqlalchemy
+psycopg2-binary
+apscheduler
+python-dotenv
+loguru
+pydantic-settings
