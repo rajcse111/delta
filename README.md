@@ -12,7 +12,7 @@ A production-ready Python application that periodically retrieves incremental da
 
 ## Prerequisites
 - Python 3.9+
-- PostgreSQL database
+- MySQL database
 
 ## Installation
 1. Install dependencies:
@@ -24,18 +24,45 @@ A production-ready Python application that periodically retrieves incremental da
 1. Update the `.env` file with your database credentials and settings.
    ```env
    DB_HOST=localhost
-   DB_PORT=5433
-   DB_USER=postgres
-   DB_PASSWORD=password
-   DB_NAME=postgres
+   DB_PORT=3306
+   DB_USER=root
+   DB_PASSWORD=
+   DB_NAME=test
+   DB_TABLE_NAME=users
    FETCH_INTERVAL_MINUTES=1
-   DELTA_COLUMN=updated_at
+   DELTA_COLUMN=registration_date
    LAST_PROCESSED_OFFSET_FILE=last_processed_offset.txt
    LOG_LEVEL=INFO
    ```
 
 ## Running the Application
+### Unix (Linux/macOS)
 ```bash
+# Create virtual environment
+python3 -m venv venv
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run application
+python main.py
+```
+
+### Windows
+```powershell
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+.\venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run application
 python main.py
 ```
 

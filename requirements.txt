@@ -1,5 +1,5 @@
 sqlalchemy
-psycopg2-binary
+pymysql
 apscheduler
 python-dotenv
 loguru

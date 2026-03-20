@@ -42,5 +42,5 @@ class DatabaseManager:
             raise e # Raise to trigger retry mechanism
 
 def get_db_url() -> str:
-    """Constructs the database connection URL."""
-    return f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
+    """Constructs the MySQL connection URL."""
+    return f"mysql+pymysql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
