@@ -1,4 +1,5 @@
 from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.triggers.cron import CronTrigger
 from loguru import logger
 import sys
 import time
@@ -16,7 +17,15 @@ class DeltaApp:
 
     def __init__(self):
         self.db_manager = DatabaseManager(get_db_url())
-        self.state_manager = StateManager(settings.LAST_PROCESSED_OFFSET_FILE)
+        
+        # Initialize StateManager with DB engine if enabled
+        self.state_manager = StateManager(
+            use_db=settings.USE_DB_STATE_STORE,
+            offset_file=settings.LAST_PROCESSED_OFFSET_FILE,
+            db_engine=self.db_manager.engine if settings.USE_DB_STATE_STORE else None,
+            process_name="user_data_sync" # Unique identifier for this process
+        )
+        
         self.table_to_process = settings.DB_TABLE_NAME
 
     def process_records(self, records: List[Dict[str, Any]]) -> Optional[Any]:
@@ -26,51 +35,69 @@ class DeltaApp:
         
         # In a real scenario, process records here (e.g., push to Kafka, write to another DB, etc.)
         for record in records:
-            logger.debug(f"Processing record: {record}")
+            # logger.debug(f"Processing record: {record}") # Commented out to reduce noise in large batches
+            pass
+            
+        logger.info(f"Processed batch of {len(records)} records.")
         
         # Returns the last offset to be saved
         return records[-1].get(settings.DELTA_COLUMN)
 
     def run_task(self):
-        """Runs the incremental fetching and processing task with retries."""
+        """Runs the incremental fetching and processing task with batching and retries."""
         
-        max_retries = 3
-        retry_delay = 5 # seconds
+        logger.info("Starting scheduled task execution...")
         
-        for attempt in range(1, max_retries + 1):
+        # Parse target statuses
+        target_statuses = None
+        if settings.STATUS_COLUMN and settings.TARGET_STATUSES:
+            target_statuses = [s.strip() for s in settings.TARGET_STATUSES.split(",") if s.strip()]
+
+        batch_size = settings.BATCH_SIZE
+        total_processed = 0
+        
+        while True:
+            # Batch Loop
             try:
                 # 1. Get last processed offset
                 last_offset = self.state_manager.get_last_offset()
                 
-                # 2. Fetch delta data
+                # 2. Fetch delta data (Batch)
                 records = self.db_manager.fetch_delta_data(
                     table_name=self.table_to_process,
                     delta_column=settings.DELTA_COLUMN,
-                    last_offset=last_offset
+                    last_offset=last_offset,
+                    limit=batch_size,
+                    status_column=settings.STATUS_COLUMN,
+                    target_statuses=target_statuses
                 )
                 
-                # 3. Process records and get the new offset
-                if records:
-                    new_offset = self.process_records(records)
+                if not records:
+                    logger.info("No more records to process in this run.")
+                    break
+                
+                # 3. Process records
+                new_offset = self.process_records(records)
+                
+                # 4. Save the new offset (Idempotency checkpoint)
+                if new_offset:
+                    self.state_manager.save_last_offset(new_offset)
+                    logger.debug(f"Checkpoint saved: {new_offset}")
+                
+                total_processed += len(records)
+                
+                # If we fetched fewer records than the batch size, we are done
+                if len(records) < batch_size:
+                    logger.info("Reached end of available data.")
+                    break
                     
-                    # 4. Save the new offset (Idempotency checkpoint)
-                    if new_offset:
-                        self.state_manager.save_last_offset(new_offset)
-                        logger.info(f"Task completed successfully. Last offset updated to: {new_offset}")
-                else:
-                    logger.info("No new records to process.")
-                
-                # If successful, break the retry loop
-                break
-                
             except Exception as e:
-                logger.error(f"Error during execution (Attempt {attempt}/{max_retries}): {e}")
-                if attempt < max_retries:
-                    logger.info(f"Retrying in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2 # Exponential backoff
-                else:
-                    logger.critical("Max retries reached. Task failed.")
+                logger.error(f"Error during batch execution: {e}")
+                # Optional: Add retry logic here specifically for the batch or break to retry next schedule
+                # For now, we will break to avoid infinite error loops
+                break
+        
+        logger.info(f"Task execution completed. Total records processed: {total_processed}")
 
 def main():
     """Application entry point."""
@@ -79,21 +106,26 @@ def main():
     app = DeltaApp()
     
     # Initialize scheduler
-    scheduler = BlockingScheduler()
+    scheduler = BlockingScheduler(timezone=settings.TIMEZONE)
     
-    # Schedule the task
-    scheduler.add_job(
-        app.run_task,
-        "interval",
-        minutes=settings.FETCH_INTERVAL_MINUTES,
-        id="delta_fetch_job"
+    # Schedule the task using CronTrigger
+    trigger = CronTrigger(
+        hour=settings.SCHEDULE_HOUR,
+        minute=settings.SCHEDULE_MINUTE
     )
     
-    logger.info(f"Task scheduled every {settings.FETCH_INTERVAL_MINUTES} minute(s).")
+    scheduler.add_job(
+        app.run_task,
+        trigger=trigger,
+        id="delta_fetch_job",
+        name="Daily Delta Fetch"
+    )
+    
+    logger.info(f"Task scheduled to run daily at {settings.SCHEDULE_HOUR:02d}:{settings.SCHEDULE_MINUTE:02d} {settings.TIMEZONE}.")
     
     try:
-        # Run the first task immediately
-        app.run_task()
+        # Run the first task immediately for testing/validation (Optional, can be removed for pure production)
+        # app.run_task() 
         
         # Start the scheduler
         scheduler.start()
