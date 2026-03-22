@@ -85,24 +85,12 @@ class StateManager:
             return None
 
     def _save_offset_to_db(self, offset: str):
-        # UPSERT (Insert or Update) logic depends on DB type.
-        # Since we use SQLAlchemy, we can try a generic approach or standard SQL.
-        # MySQL supports "ON DUPLICATE KEY UPDATE".
-        # PostgreSQL supports "ON CONFLICT".
-        # For simplicity and broad compatibility without complex dialect checking here (assuming MySQL per request):
-        
-        # We'll use a simple check-then-update or insert strategy for broad compatibility if we don't want dialect specific SQL here,
-        # OR use the specific syntax since we know it's MySQL now.
-        # Given the previous context was MySQL, let's use MySQL syntax but keep it somewhat clean.
-        
-        # Actually, standard SQL MERGE is not supported everywhere.
-        # Let's try a delete-insert or update-if-exists.
-        
-        # MySQL specific:
+        # PostgreSQL specific UPSERT:
         upsert_sql = """
         INSERT INTO processing_state (process_name, last_processed_timestamp)
         VALUES (:pname, :offset)
-        ON DUPLICATE KEY UPDATE last_processed_timestamp = :offset
+        ON CONFLICT (process_name) 
+        DO UPDATE SET last_processed_timestamp = EXCLUDED.last_processed_timestamp
         """
         
         try:

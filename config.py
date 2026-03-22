@@ -3,10 +3,10 @@ from typing import Optional
 
 class Settings(BaseSettings):
     DB_HOST: str = "localhost"
-    DB_PORT: int = 3306
-    DB_USER: str = "root"
-    DB_PASSWORD: str = ""
-    DB_NAME: str = "test"
+    DB_PORT: int = 5433
+    DB_USER: str = "postgres"
+    DB_PASSWORD: str = "password"
+    DB_NAME: str = "postgres"
     DB_TABLE_NAME: str = "users"
     FETCH_INTERVAL_MINUTES: int = 1  # Kept for backward compatibility, but we will use CRON mostly
     SCHEDULE_HOUR: int = 20
