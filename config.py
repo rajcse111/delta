@@ -7,10 +7,12 @@ class Settings(BaseSettings):
     DB_USER: str = "postgres"
     DB_PASSWORD: str = "password"
     DB_NAME: str = "postgres"
-    DB_TABLE_NAME: str = "users"
-    TARGET_TABLE_NAME: str = "test_users"
+    # Multi-table Configuration
+    # Format: "source_table:target_table:process_id,source_table2:target_table2:process_id2"
+    MIGRATION_TABLES: str = "users:test_users:user_migration"
+    
     HEALTH_TABLE_NAME: str = "health"
-    PRIMARY_KEY_COLUMN: str = "id" # Added to track the primary key explicitly
+    PRIMARY_KEY_COLUMN: str = "id"
     
     FETCH_INTERVAL_MINUTES: int = 1
     SCHEDULE_HOUR: int = 20
