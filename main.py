@@ -12,125 +12,109 @@ from typing import List, Dict, Any, Optional
 logger.remove()
 logger.add(sys.stdout, format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>", level=settings.LOG_LEVEL)
 
-class DeltaApp:
-    """The main application for incremental data fetching and processing."""
+class DataMigrationApp:
+    """Production-ready application for data transfer and health tracking."""
 
     def __init__(self):
         self.db_manager = DatabaseManager(get_db_url())
         
-        # Initialize StateManager with DB engine if enabled
-        self.state_manager = StateManager(
+        # State managers for different stages
+        self.final_stage_state = StateManager(
             use_db=settings.USE_DB_STATE_STORE,
-            offset_file=settings.LAST_PROCESSED_OFFSET_FILE,
-            db_engine=self.db_manager.engine if settings.USE_DB_STATE_STORE else None,
-            process_name="user_data_sync" # Unique identifier for this process
+            offset_file="final_stage_offset.txt",
+            db_engine=self.db_manager.engine,
+            process_name="final_stage_migration"
         )
-        
-        self.table_to_process = settings.DB_TABLE_NAME
+        self.intermediate_stage_state = StateManager(
+            use_db=settings.USE_DB_STATE_STORE,
+            offset_file="intermediate_stage_offset.txt",
+            db_engine=self.db_manager.engine,
+            process_name="intermediate_stage_migration"
+        )
 
-    def process_records(self, records: List[Dict[str, Any]]) -> Optional[Any]:
-        """Business logic for processing the fetched records."""
-        if not records:
-            return None
-        
-        # In a real scenario, process records here (e.g., push to Kafka, write to another DB, etc.)
-        for record in records:
-            # logger.debug(f"Processing record: {record}") # Commented out to reduce noise in large batches
-            pass
-            
-        logger.info(f"Processed batch of {len(records)} records.")
-        
-        # Returns the last offset to be saved
-        return records[-1].get(settings.DELTA_COLUMN)
-
-    def run_task(self):
-        """Runs the incremental fetching and processing task with batching and retries."""
-        
-        logger.info("Starting scheduled task execution...")
-        
-        # Parse target statuses
-        target_statuses = None
-        if settings.STATUS_COLUMN and settings.TARGET_STATUSES:
-            target_statuses = [s.strip() for s in settings.TARGET_STATUSES.split(",") if s.strip()]
-
-        batch_size = settings.BATCH_SIZE
+    def run_migration(self, process_name: str, state_manager: StateManager, target_statuses: List[str]):
+        """Runs the migration for a specific set of statuses."""
+        logger.info(f"Starting migration: {process_name}")
         total_processed = 0
-        
-        while True:
-            # Batch Loop
-            try:
-                # 1. Get last processed offset
-                last_offset = self.state_manager.get_last_offset()
+        status = "SUCCESS"
+        error_msg = ""
+
+        try:
+            while True:
+                last_offset = state_manager.get_last_offset()
                 
-                # 2. Fetch delta data (Batch)
+                # Fetch records
                 records = self.db_manager.fetch_delta_data(
-                    table_name=self.table_to_process,
+                    table_name=settings.DB_TABLE_NAME,
                     delta_column=settings.DELTA_COLUMN,
                     last_offset=last_offset,
-                    limit=batch_size,
+                    limit=settings.BATCH_SIZE,
                     status_column=settings.STATUS_COLUMN,
-                    target_statuses=target_statuses
+                    target_statuses=target_statuses,
+                    order_desc=settings.ORDER_BY_DESC
                 )
-                
+
                 if not records:
-                    logger.info("No more records to process in this run.")
+                    logger.info(f"No more records for {process_name}")
                     break
+
+                # Transfer data
+                self.db_manager.insert_records(settings.TARGET_TABLE_NAME, records)
                 
-                # 3. Process records
-                new_offset = self.process_records(records)
-                
-                # 4. Save the new offset (Idempotency checkpoint)
-                if new_offset:
-                    self.state_manager.save_last_offset(new_offset)
-                    logger.debug(f"Checkpoint saved: {new_offset}")
+                # Update state
+                new_offset = str(records[-1].get(settings.DELTA_COLUMN))
+                state_manager.save_last_offset(new_offset)
                 
                 total_processed += len(records)
                 
-                # If we fetched fewer records than the batch size, we are done
-                if len(records) < batch_size:
-                    logger.info("Reached end of available data.")
+                if len(records) < settings.BATCH_SIZE:
                     break
-                    
-            except Exception as e:
-                logger.error(f"Error during batch execution: {e}")
-                # Optional: Add retry logic here specifically for the batch or break to retry next schedule
-                # For now, we will break to avoid infinite error loops
-                break
+
+        except Exception as e:
+            status = "FAILED"
+            error_msg = str(e)
+            logger.error(f"Migration {process_name} failed: {e}")
+        finally:
+            self.db_manager.log_health(
+                process_name=process_name,
+                status=status,
+                records_processed=total_processed,
+                message=error_msg if status == "FAILED" else f"Successfully migrated {total_processed} records."
+            )
+
+    def run_all_tasks(self):
+        """Executes migration for both final and intermediate stages."""
+        logger.info("Executing scheduled data migration pipeline.")
         
-        logger.info(f"Task execution completed. Total records processed: {total_processed}")
+        # Final Stage
+        final_statuses = [s.strip() for s in settings.FINAL_STAGE_STATUSES.split(",") if s.strip()]
+        self.run_migration("final_stage", self.final_stage_state, final_statuses)
+        
+        # Intermediate Stage
+        inter_statuses = [s.strip() for s in settings.INTERMEDIATE_STAGE_STATUSES.split(",") if s.strip()]
+        self.run_migration("intermediate_stage", self.intermediate_stage_state, inter_statuses)
 
 def main():
-    """Application entry point."""
-    logger.info("Starting Delta Fetching Application...")
+    logger.info("Starting Data Migration System...")
+    app = DataMigrationApp()
     
-    app = DeltaApp()
-    
-    # Initialize scheduler
     scheduler = BlockingScheduler(timezone=settings.TIMEZONE)
-    
-    # Schedule the task using CronTrigger
-    trigger = CronTrigger(
-        hour=settings.SCHEDULE_HOUR,
-        minute=settings.SCHEDULE_MINUTE
-    )
+    trigger = CronTrigger(hour=settings.SCHEDULE_HOUR, minute=settings.SCHEDULE_MINUTE)
     
     scheduler.add_job(
-        app.run_task,
+        app.run_all_tasks,
         trigger=trigger,
-        id="delta_fetch_job",
-        name="Daily Delta Fetch"
+        id="data_migration_job",
+        name="Scheduled Data Transfer"
     )
     
-    logger.info(f"Task scheduled to run daily at {settings.SCHEDULE_HOUR:02d}:{settings.SCHEDULE_MINUTE:02d} {settings.TIMEZONE}.")
+    logger.info(f"Scheduled at {settings.SCHEDULE_HOUR:02d}:{settings.SCHEDULE_MINUTE:02d} {settings.TIMEZONE}")
     
     try:
-        # Run the first task immediately for testing/validation (Optional, can be removed for pure production)
-        # app.run_task() 
-        
-        # Start the scheduler
+        # app.run_all_tasks() # Run once on start for validation
         scheduler.start()
     except (KeyboardInterrupt, SystemExit):
-        logger.info("Shutting down the application gracefully.")
+        logger.info("Graceful shutdown.")
         scheduler.shutdown()
 
 if __name__ == "__main__":

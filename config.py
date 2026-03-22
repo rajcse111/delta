@@ -8,16 +8,21 @@ class Settings(BaseSettings):
     DB_PASSWORD: str = "password"
     DB_NAME: str = "postgres"
     DB_TABLE_NAME: str = "users"
-    FETCH_INTERVAL_MINUTES: int = 1  # Kept for backward compatibility, but we will use CRON mostly
+    TARGET_TABLE_NAME: str = "test_users"
+    HEALTH_TABLE_NAME: str = "health"
+    
+    FETCH_INTERVAL_MINUTES: int = 1
     SCHEDULE_HOUR: int = 20
     SCHEDULE_MINUTE: int = 0
     TIMEZONE: str = "UTC"
     
     BATCH_SIZE: int = 2000
-    STATUS_COLUMN: Optional[str] = None # e.g., "status"
-    TARGET_STATUSES: Optional[str] = None # e.g., "COMPLETED,FAILED" (comma separated)
+    STATUS_COLUMN: str = "status"
+    FINAL_STAGE_STATUSES: str = "COMPLETED,FAILED,CLOSED"
+    INTERMEDIATE_STAGE_STATUSES: str = "PENDING,PROCESSING,IN_PROGRESS"
 
-    DELTA_COLUMN: str = "updated_at"
+    DELTA_COLUMN: str = "registration_date"
+    ORDER_BY_DESC: bool = True # Per CR.pdf requirement for Descending order
     LAST_PROCESSED_OFFSET_FILE: str = "last_processed_offset.txt"
     USE_DB_STATE_STORE: bool = True
     LOG_LEVEL: str = "INFO"
