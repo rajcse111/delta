@@ -66,7 +66,11 @@ class DataProcessor:
                     break
 
                 # Transfer data
-                self.db_manager.insert_records(settings.TARGET_TABLE_NAME, records)
+                self.db_manager.insert_records(
+                    table_name=settings.TARGET_TABLE_NAME, 
+                    records=records,
+                    primary_key=settings.PRIMARY_KEY_COLUMN
+                )
                 
                 # Update state
                 new_offset = str(records[-1].get(settings.DELTA_COLUMN))

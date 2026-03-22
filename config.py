@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     DB_TABLE_NAME: str = "users"
     TARGET_TABLE_NAME: str = "test_users"
     HEALTH_TABLE_NAME: str = "health"
+    PRIMARY_KEY_COLUMN: str = "id" # Added to track the primary key explicitly
     
     FETCH_INTERVAL_MINUTES: int = 1
     SCHEDULE_HOUR: int = 20

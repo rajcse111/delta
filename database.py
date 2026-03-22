@@ -86,19 +86,40 @@ class DatabaseManager:
             logger.error(f"Error fetching data: {e}")
             raise e
 
-    def insert_records(self, table_name: str, records: List[Dict[str, Any]]):
-        """Inserts records into the target table."""
+    def insert_records(self, table_name: str, records: List[Dict[str, Any]], primary_key: str = "id"):
+        """Inserts records into the target table ensuring primary key values are preserved."""
         if not records:
             return
         
+        # Columns must include the primary key if it exists in the source
+        columns = list(records[0].keys())
+        logger.debug(f"Columns to insert into {table_name}: {columns}")
+        
+        insert_sql = f"""
+        INSERT INTO {table_name} ({', '.join(columns)}) 
+        VALUES ({', '.join([':'+k for k in columns])})
+        """
+        
         try:
             with self.engine.connect() as conn:
-                # Use a transaction for the batch insert
                 with conn.begin():
-                    # Batch insert using the table's column names
-                    # Note: This assumes columns in records match target table
-                    conn.execute(text(f"INSERT INTO {table_name} ({', '.join(records[0].keys())}) VALUES ({', '.join([':'+k for k in records[0].keys()])})"), records)
-                logger.info(f"Successfully inserted {len(records)} records into {table_name}")
+                    # Batch insert
+                    conn.execute(text(insert_sql), records)
+                    
+                    # After insertion, we need to sync the sequence so next auto-increment is correct.
+                    # This is specifically for PostgreSQL SERIAL columns.
+                    sync_seq_sql = f"""
+                    SELECT setval(pg_get_serial_sequence('{table_name}', '{primary_key}'), COALESCE(MAX({primary_key}), 1)) 
+                    FROM {table_name};
+                    """
+                    try:
+                        conn.execute(text(sync_seq_sql))
+                        logger.debug(f"Synchronized sequence for {table_name}.{primary_key}")
+                    except Exception as seq_err:
+                        # Non-serial primary keys or other DBs might fail here, skip silently if so.
+                        logger.warning(f"Could not sync sequence (may not be a SERIAL): {seq_err}")
+                
+                logger.info(f"Successfully inserted {len(records)} records into {table_name} preserving IDs.")
         except Exception as e:
             logger.error(f"Error inserting records: {e}")
             raise e
