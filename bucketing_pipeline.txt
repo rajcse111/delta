@@ -1,0 +1,66 @@
+You are a senior data engineer. Generate production-ready Python code and architecture for the following requirement.
+
+Problem
+
+I need aggregated claims data to be visualized in Grafana via Elasticsearch.
+
+Source Data Logic (SQL)
+SELECT 
+    COALESCE(bucket, 'Total Claims') AS bucket,
+    COUNT(*) AS total_claims
+FROM (
+    SELECT
+        a.id,
+        CASE
+            WHEN ... THEN 'Hospital'
+            WHEN ... THEN 'BPA'
+            -- more conditions
+        END AS bucket
+    FROM tableA a
+    LEFT JOIN tableC c ON ...
+) t
+GROUP BY bucket;
+Requirements
+Extract data from a relational database (e.g., MySQL).
+Apply transformation logic equivalent to the SQL above in Python (or execute SQL directly if better).
+Load the aggregated results into Elasticsearch with an appropriate index mapping.
+The data should be ready for Grafana dashboards.
+Constraints
+Use Python (no Logstash).
+Code should be modular and production-ready.
+Include configuration via config files.
+Handle errors and retries.
+Support incremental or scheduled execution.
+Airflow Integration
+Use Apache Airflow to orchestrate the pipeline.
+Provide a complete DAG:
+(extract) task
+transform task
+load to Elasticsearch task
+Include scheduling (e.g., daily run).
+Include retry and logging configuration.
+Expected Output
+
+Provide:
+
+Project structure
+Python modules:
+database connection
+transformation logic
+Elasticsearch indexing
+Airflow DAG code
+Elasticsearch index mapping
+Sample configuration file (.env or YAML)
+Instructions to run locally
+Libraries
+
+Use appropriate Python libraries such as:
+
+SQLAlchemy or psycopg2 (DB access)
+elasticsearch-py (Elasticsearch client)
+pandas (optional for transformation)
+apache-airflow
+Notes
+Optimize for readability and maintainability.
+Include comments in code.
+Avoid placeholders—provide working example code where possible.
